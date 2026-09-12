@@ -1,0 +1,44 @@
+{
+  "version": "0.1.0",
+  "published_at": "2026-09-12T23:06:11Z",
+  "previous_revision": null,
+  "summary": "Initial cloud execution guidance with focused context, bounded delegation, capability-aware model selection, deterministic tools, and evidence-based review.",
+  "topics": [
+    {
+      "id": "core",
+      "title": "Efficient execution",
+      "summary": "The compact operating method.",
+      "path": "skills/hephaestus/references/core.md"
+    },
+    {
+      "id": "context",
+      "title": "Focused context",
+      "summary": "Narrow reads, handoffs, and reusable checkpoints.",
+      "path": "skills/hephaestus/references/context.md"
+    },
+    {
+      "id": "delegation",
+      "title": "Bounded delegation",
+      "summary": "Decide whether to delegate and define the contract.",
+      "path": "skills/hephaestus/references/delegation.md"
+    },
+    {
+      "id": "models",
+      "title": "Economical model selection",
+      "summary": "Use available, authorized model controls honestly.",
+      "path": "skills/hephaestus/references/models.md"
+    },
+    {
+      "id": "tools",
+      "title": "Deterministic work and receipts",
+      "summary": "Bounded tool use and reliable remote completion.",
+      "path": "skills/hephaestus/references/tools.md"
+    },
+    {
+      "id": "review",
+      "title": "Evidence-based completion",
+      "summary": "Verify the outcome and report actual evidence.",
+      "path": "skills/hephaestus/references/review.md"
+    }
+  ]
+}

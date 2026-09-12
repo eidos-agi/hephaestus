@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hephaestus",
+  "main": "src/index.ts",
+  "account_id": "3c1d42c77978e6af0e458b6f1130c01b",
+  "compatibility_date": "2026-09-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "minify": true,
+  "ratelimits": [{"name":"AUTH_RATE_LIMIT","namespace_id":"928641","simple":{"limit":60,"period":60}}],
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "hephaestus-guidance",
+    "database_id": "86b57c82-e802-4dbe-b364-f0468316595c",
+    "migrations_dir": "migrations"
+  }],
+  "observability": {"enabled": false}
+}

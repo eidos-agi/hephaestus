@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hephaestus": {
+      "type": "http",
+      "url": "https://hephaestus.eidosagi.com/mcp"
+    }
+  }
+}

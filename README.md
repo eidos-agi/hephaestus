@@ -32,6 +32,12 @@ For an eligible workspace administrator, the import source is `https://github.co
 
 No `mcp.json`, `.mcp.json`, app dependency, hook, or runtime installation script is declared. This deliberately avoids the documented MCP-related **Desktop only** restriction for imported plugins. Existing authorized tools remain optional execution routes, not plugin dependencies.
 
+## Optional live guidance
+
+The live MCP at `https://hephaestus.eidosagi.com/mcp` serves current, versioned guidance through three read-only tools. Connect it separately in ChatGPT using OAuth; a personal API token is entered once on Hephaestus’s connection page. The instruction package remains usable without that connection.
+
+See [live guidance and administration](docs/LIVE_GUIDANCE.md) and [deployment verification](docs/deployment.md). The Worker and its development dependencies are excluded from the installable instruction archives.
+
 ## Package
 
 ```text

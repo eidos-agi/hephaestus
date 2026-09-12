@@ -14,7 +14,7 @@ For an eligible workspace administrator, open **Workspace settings > Plugins > A
 
 The importer discovers `.agents/plugins/marketplace.json`. Do not put that filename in Path. Its one entry points to the plugin at `./`, relative to the repository/marketplace root. The catalog does not import other applications.
 
-Review the import report and the resulting plugin's workspace availability. Hephaestus has no app connections to authorize. Marketplace policy fields are catalog hints; the workspace's installation/access settings are authoritative and are not granted by repository JSON.
+Review the import report and the resulting plugin's workspace availability. The instruction package has no required app connection. The optional live guidance MCP has a separate OAuth connection described in [live guidance](LIVE_GUIDANCE.md). Marketplace policy fields are catalog hints; the workspace's installation/access settings are authoritative and are not granted by repository JSON.
 
 A public GitHub repository does not automatically publish a plugin in the universal directory or install it in a ChatGPT account. Workspace sharing is not public-directory publication.
 

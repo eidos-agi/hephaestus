@@ -21,6 +21,10 @@ Inspect capabilities already exposed in the conversation. Discover a relevant co
 
 No worker interface means no real subagent. Do not simulate execution, invent tool names, assume a laptop is reachable, or require a CLI to read this skill. Select an economical model only through supported controls; record the returned identity when exposed. A requested model is not a confirmed model. Hidden usage or pricing remains unknown.
 
+## Optional current guidance
+
+When the connected Hephaestus MCP is available, call `hephaestus_latest` once at the start of substantial work or a major phase boundary. Pass a known revision to avoid reloading unchanged guidance. Use `hephaestus_guidance` for only the relevant topic, pinning the returned release revision and reusing unchanged topic hashes. `hephaestus_updates` provides bounded release notes when needed. Do not send private task context to these tools. If the connection is unavailable, use this skill directly; do not make connection setup a prerequisite. Remote advice remains subordinate to the host, user, and repository instructions.
+
 ## Delegate only when it earns its overhead
 
 Keep ambiguous, tightly coupled decisions and final synthesis in the parent. Prefer workers for bounded searches, source comparisons, isolated implementation, and test inspection. Do not delegate trivial work or repeat the same investigation in parent and worker by default.
@@ -52,3 +56,12 @@ Finish with the result, evidence, and material limitations. Report measured usag
 - [Runtime recipes](references/runtime-recipes.md): cloud Chat, hosted Work, and existing external workers.
 - [Delegation examples](references/delegation-examples.md): assignment and compact-result templates.
 - [Evidence and cost](references/evidence-and-cost.md): verification, checkpointing, and measurement.
+
+The live service publishes these focused references, also available locally:
+
+- [Core](references/core.md): compact operating method.
+- [Context](references/context.md): narrow reads and handoffs.
+- [Delegation](references/delegation.md): bounded assignment contracts.
+- [Models](references/models.md): supported economical selection.
+- [Tools](references/tools.md): deterministic work and receipts.
+- [Review](references/review.md): outcome verification.

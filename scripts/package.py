@@ -17,10 +17,17 @@ SKILL_FILES = (
     f'{SKILL_ROOT}/references/runtime-recipes.md',
     f'{SKILL_ROOT}/references/delegation-examples.md',
     f'{SKILL_ROOT}/references/evidence-and-cost.md',
+    f'{SKILL_ROOT}/references/core.md',
+    f'{SKILL_ROOT}/references/context.md',
+    f'{SKILL_ROOT}/references/delegation.md',
+    f'{SKILL_ROOT}/references/models.md',
+    f'{SKILL_ROOT}/references/tools.md',
+    f'{SKILL_ROOT}/references/review.md',
 )
 PLUGIN_FILES = (
     'plugin.json', '.codex-plugin/plugin.json', 'README.md',
-    'docs/CLOUD_INSTALL.md', 'docs/EVALUATION.md', 'evals/scenarios.json',
+    'docs/CLOUD_INSTALL.md', 'docs/EVALUATION.md', 'docs/LIVE_GUIDANCE.md',
+    'docs/deployment.md', 'evals/scenarios.json',
     *SKILL_FILES,
 )
 REQUIRED_FILES = (*PLUGIN_FILES, '.agents/plugins/marketplace.json')

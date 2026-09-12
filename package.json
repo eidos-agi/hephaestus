@@ -1,0 +1,40 @@
+{
+  "name": "hephaestus",
+  "version": "0.1.0",
+  "description": "Hephaestus cloud execution guidance plugin and MCP Worker",
+  "scripts": {
+    "build:guidance": "node scripts/build-guidance.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "build": "npm run build:guidance && wrangler deploy --dry-run --outdir dist/worker",
+    "deploy": "wrangler deploy",
+    "publish:guidance": "node scripts/admin.mjs publish",
+    "db:migrate": "wrangler d1 migrations apply hephaestus-guidance --remote",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eidos-agi/hephaestus.git"
+  },
+  "keywords": [],
+  "author": "Eidos AGI",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/eidos-agi/hephaestus/issues"
+  },
+  "homepage": "https://github.com/eidos-agi/hephaestus#readme",
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.6.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260911.1",
+    "@modelcontextprotocol/client": "2.0.0",
+    "typescript": "7.0.2",
+    "wrangler": "4.131.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
