@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hephaestus",
+  "version": "0.1.0",
+  "description": "Efficient AI execution through focused context, bounded delegation, and evidence-based verification.",
+  "author": {
+    "name": "Eidos AGI"
+  },
+  "repository": "https://github.com/eidos-agi/hephaestus",
+  "homepage": "https://github.com/eidos-agi/hephaestus",
+  "keywords": [
+    "skills",
+    "delegation",
+    "context-efficiency",
+    "verification"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Hephaestus",
+        "shortDescription": "Focused context. Useful delegation. Verified results.",
+        "longDescription": "Teach AI to complete substantial work efficiently with focused context, bounded delegation, economical available models, deterministic tools, and evidence-based review. Skills only: no server, API key, or local setup required to use the method.",
+        "developerName": "Eidos AGI",
+        "category": "Productivity",
+        "websiteURL": "https://github.com/eidos-agi/hephaestus",
+        "defaultPrompt": [
+          "Use Hephaestus to complete this task efficiently.",
+          "Use Hephaestus and delegate independent work to available subagents.",
+          "Use Hephaestus to resume this task from its saved evidence."
+        ]
+      }
+    }
+  }
+}

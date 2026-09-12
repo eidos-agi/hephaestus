@@ -1,0 +1,20 @@
+{
+  "name": "eidos-hephaestus",
+  "interface": {
+    "displayName": "Eidos Hephaestus"
+  },
+  "plugins": [
+    {
+      "name": "hephaestus",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
