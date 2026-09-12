@@ -24,7 +24,10 @@ const registerSchema = z.object({
   client_name:z.string().min(1).max(100).default('MCP client'),
   redirect_uris:z.array(z.string().max(2048).refine(redirectAllowed)).min(1).max(5),
   token_endpoint_auth_method:z.literal('none').default('none'),
-  grant_types:z.array(z.literal('authorization_code')).default(['authorization_code']),
+  // Clients may request refresh support; registration returns only the grant we offer.
+  grant_types:z.array(z.enum(['authorization_code','refresh_token'])).min(1).max(2)
+    .refine(grants=>grants.includes('authorization_code')).default(['authorization_code'])
+    .transform(()=>['authorization_code']),
   response_types:z.array(z.literal('code')).default(['code']),
 });
 
@@ -56,7 +59,11 @@ export async function oauth(request:Request,env:Env):Promise<Response|null> {
   });
   if (path==='/oauth/register' && request.method==='POST') {
     const parsed=registerSchema.safeParse(await request.json().catch(()=>null));
-    if (!parsed.success) return error('invalid_client_metadata','Use public-client PKCE and a ChatGPT or local Codex callback.');
+    if (!parsed.success) {
+      // Only field names and validation codes: never request values or credentials.
+      console.warn(JSON.stringify({event:'oauth_registration_rejected',issues:parsed.error.issues.map(issue=>({field:issue.path.join('.'),code:issue.code}))}));
+      return error('invalid_client_metadata','Use public-client PKCE and a ChatGPT or local Codex callback.');
+    }
     const c=parsed.data,id=crypto.randomUUID();
     await env.DB.prepare('INSERT INTO oauth_clients(id,name,redirect_uris) VALUES(?,?,?)').bind(id,c.client_name,JSON.stringify(c.redirect_uris)).run();
     return reply({...c,client_id:id,client_id_issued_at:Math.floor(Date.now()/1000)},201);

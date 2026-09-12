@@ -5,8 +5,8 @@ Verified on September 12, 2026.
 - Worker: `hephaestus`, Eidos AGI account.
 - Canonical MCP endpoint: `https://hephaestus.eidosagi.com/mcp`.
 - Health: `https://hephaestus.eidosagi.com/health` returned HTTP 200 and `status: ok`.
-- Worker deployment ID: `86c3adade1c549a2a1b30bb7295c0fe9`.
-- Runtime source commit: `797d118`.
+- Worker deployment ID: `6bc856c1a6f14806bbab4e20edd01e72`.
+- Runtime source: the Worker implementation in `src/`, including the OAuth registration compatibility fix described below.
 - Published guidance revision: `65f1df029cd4ee13a0a73d7234af82e15f5d24aeb29e858560a1802f9586bca7`.
 - Guidance version: `0.1.0`, six topics.
 
@@ -28,7 +28,11 @@ Temporary personal API tokens created for verification were revoked afterward. N
 
 The signed-in ChatGPT plugin setup screen successfully discovered the deployed endpoints, selected Dynamic Client Registration (DCR), checked the `guidance:read` scope, and displayed the correct authorization URL, token URL, registration URL, issuer, and MCP resource.
 
-This verifies ChatGPT's discovery/configuration compatibility. The connection form was prepared but not submitted, and a signed-in ChatGPT tool call has not yet been performed. The live protocol test is separate from completing a connection inside the user's ChatGPT account.
+Actual connector creation initially failed because ChatGPT requested an additional grant type during dynamic registration. The server now accepts an authorization-code registration request that also asks for refresh support and returns only the supported `authorization_code` grant. This metadata negotiation is permitted by [RFC 7591 section 3.2.1](https://www.rfc-editor.org/rfc/rfc7591.html#section-3.2.1). Refresh-token grants remain unavailable; connection tokens still expire after 30 days.
+
+After deployment, ChatGPT successfully created the connector and navigated to the Hephaestus personal-token sign-in form. Credential entry and a signed-in ChatGPT tool call remain pending. Successful connector creation does not prove account linking or tool invocation.
+
+Regression coverage verifies the negotiated grant list, rejects registrations with no authorization-code grant, and confirms that the token endpoint still rejects refresh grants. Diagnostic logging records only rejected field names and validation codes. Temporary production diagnostics were disabled after identifying the mismatch.
 
 ## Reproduce
 

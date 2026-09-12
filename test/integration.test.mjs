@@ -87,8 +87,13 @@ test('ChatGPT OAuth discovery, DCR, PKCE, code replay, audience binding, session
   assert.ok(discovery.code_challenge_methods_supported.includes('S256'));
   assert.equal((await (await f.request('/.well-known/oauth-protected-resource')).json()).resource,RESOURCE);
   const redirect='https://chatgpt.com/connector_platform_oauth_redirect';
-  const reg=await f.request('/oauth/register',{method:'POST',body:JSON.stringify({client_name:'ChatGPT',redirect_uris:[redirect],token_endpoint_auth_method:'none'})});
-  assert.equal(reg.status,201);const {client_id}=await reg.json();
+  const reg=await f.request('/oauth/register',{method:'POST',body:JSON.stringify({client_name:'ChatGPT',redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token']})});
+  assert.equal(reg.status,201);const {client_id,grant_types}=await reg.json();
+  assert.deepEqual(grant_types,['authorization_code']);
+  assert.equal((await f.request('/oauth/token',{method:'POST',body:new URLSearchParams({grant_type:'refresh_token'})})).status,400);
+  for(const grants of [[],['refresh_token'],['client_credentials']]) {
+    assert.equal((await f.request('/oauth/register',{method:'POST',body:JSON.stringify({redirect_uris:[redirect],grant_types:grants})})).status,400);
+  }
   assert.equal((await f.request('/oauth/register',{method:'POST',body:JSON.stringify({redirect_uris:['https://evil.example/callback']})})).status,400);
   const verifier=randomBytes(32).toString('base64url'),challenge=createHash('sha256').update(verifier).digest('base64url');
   const q=new URLSearchParams({client_id,redirect_uri:redirect,response_type:'code',resource:RESOURCE,scope:'guidance:read',state:'keep-me',code_challenge:challenge,code_challenge_method:'S256'});
