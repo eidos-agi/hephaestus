@@ -154,6 +154,35 @@ test('Human sign-in has 30 minutes while approved codes expire after five minute
   assert.equal((await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:second.cookie},body:second.form})).status,400);
 });
 
+test('Form policy permits the registered OAuth callback while the token POST stays local',async()=>{
+  const f=await fixture();
+  for(const redirect of [
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+    'https://chatgpt.com/connector/oauth/example-client',
+    'http://127.0.0.1:3210/callback',
+  ]) {
+    const {client_id}=await (await f.request('/oauth/register',{method:'POST',body:JSON.stringify({redirect_uris:[redirect]})})).json();
+    const query=new URLSearchParams({client_id,redirect_uri:redirect,response_type:'code',resource:RESOURCE,code_challenge:'a'.repeat(43),code_challenge_method:'S256'});
+    const page=await f.request('/oauth/authorize?'+query);
+    assert.equal(page.status,200);
+    const formAction=page.headers.get('Content-Security-Policy').split(';').map(s=>s.trim()).find(s=>s.startsWith('form-action ')).split(/\s+/).slice(1);
+    assert.deepEqual(formAction,["'self'",redirect],'allow only this registered callback, without a wildcard');
+    const html=await page.text();
+    assert.match(html,/<form method="post" action="\/oauth\/authorize">/,'personal token is submitted only to Hephaestus');
+    const request_id=/name="request_id" value="([^"]+)"/.exec(html)[1];
+    const approved=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:page.headers.get('Set-Cookie').split(';')[0]},body:new URLSearchParams({request_id,api_token:f.token})});
+    assert.equal(approved.status,303,'callback uses a GET redirect, not a replay of the token POST');
+    const callback=new URL(approved.headers.get('Location'));
+    assert.ok(formAction.includes(callback.origin+callback.pathname),'the actual callback destination is covered by the form policy');
+    assert.equal(callback.searchParams.has('api_token'),false);
+    assert.match(approved.headers.get('Set-Cookie'),/Max-Age=0(?:;|$)/);
+    query.set('redirect_uri','https://unregistered.example/callback');
+    const rejected=await f.request('/oauth/authorize?'+query);
+    assert.equal(rejected.status,400);
+    assert.equal(rejected.headers.get('Content-Security-Policy').includes('unregistered.example'),false);
+  }
+});
+
 test('Health, missing credentials, throttles, and the pause switch avoid all database work',async()=>{
   const f=await fixture();
   assert.equal((await f.request('/health')).status,200);

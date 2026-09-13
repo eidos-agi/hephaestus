@@ -5,18 +5,26 @@ Deployment and protocol checks on September 12–13, 2026.
 - Worker: `hephaestus`, Eidos AGI account.
 - Canonical MCP endpoint: `https://hephaestus.eidosagi.com/mcp`.
 - Health: `https://hephaestus.eidosagi.com/health` returned HTTP 200, `status: ok`, and `check: liveness` without a database query.
-- Worker deployment ID: `319297222cd244d386eab4b3f63523a7`.
-- Runtime source: the Worker implementation in `src/`, including persistent usage limits and the pairing corrections described below.
+- Worker deployment ID: `7316da4e341941ff84e821de8652eb54`.
+- Runtime source: the Worker implementation in `src/`, including the registered-callback form policy and the controls described below.
 - Published guidance revision: `65f1df029cd4ee13a0a73d7234af82e15f5d24aeb29e858560a1802f9586bca7`.
 - Guidance version: `0.1.0`, six topics.
 
-## Current deployment: usage limits and pairing recovery
+## Current deployment: registered-callback form policy
+
+The token page previously sent `form-action 'self'`. Chromium can apply that policy to redirects after form submission, so a successful approval could clear the cookie while the browser blocked the return to ChatGPT. A subsequent submission would then report a missing cookie. This is a code defect consistent with the reported two-click behavior; a client-side browser trace has not been captured. See [MDN's form-action redirect note](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/form-action).
+
+The policy now permits `'self'` and the validated, registered callback URL for that request. The callback URL is serialized before insertion into the header. The form still posts the personal API token only to `/oauth/authorize`; the callback uses HTTP 303 and therefore a GET without the token POST body. Unregistered callbacks remain rejected, and cookie, origin, PKCE, expiry, and revocation checks remain required. A fresh connection page is necessary because already loaded pages retain the old policy.
+
+TypeScript checking, all 13 protocol/security/usage tests, Worker bundling, the local workerd persistence test, all 18 Python package tests, and package validation passed. The new regression covers both supported ChatGPT callback forms and a local Codex callback, checks the actual approval redirect against the form policy, and rejects an unregistered callback. These are local protocol/header checks, not a completed browser account-linking test. Cloudflare accepted the deployment with the existing usage-guard migration and limits retained.
+
+## Retained usage limits and pairing recovery
 
 The September 13 deployment adds the SQLite-backed `UsageGuard` Durable Object with migration tag `usage-guard-v1`. Cloudflare accepted the migration and the deployed settings confirm all three minute-level rate limiters, the guard binding, a 100 ms CPU ceiling, and the following daily allowances: 10,000 database-backed requests globally, 500 OAuth requests within that total, and 2,000 authenticated requests per user. `SERVICE_PAUSED` is false. Production request logging remains disabled.
 
 The custom WAF ruleset `Hephaestus perimeter` is active only on `hephaestus.eidosagi.com`. The supported-route rule is enabled; the full emergency-stop rule is present and disabled. A public unsupported-path probe returned HTTP 403, while `/health` returned HTTP 200. Cloudflare confirmed that the alternate `workers.dev` and preview endpoints are disabled.
 
-Local verification passed TypeScript checking, all 12 protocol/security/usage tests, Worker bundling, and the workerd integration test. The workerd test used synthetic credentials and verified D1-backed reads, the per-user limit, the global cutoff, and quota persistence after a runtime restart. All 18 Python package tests and package validation also passed. These checks do not establish a completed production ChatGPT connection.
+For the preceding usage-limit deployment, local verification passed TypeScript checking, all 12 protocol/security/usage tests, Worker bundling, and the workerd integration test. The workerd test used synthetic credentials and verified D1-backed reads, the per-user limit, the global cutoff, and quota persistence after a runtime restart. All 18 Python package tests and package validation also passed. These checks do not establish a completed production ChatGPT connection.
 
 Pending pairing tabs now use independent CSRF cookies. Recovery pages distinguish incomplete links, missing or mismatched cookies, expired requests, and unrecognized API tokens. The same-origin, cookie, PKCE, single-use-code, and token-revocation checks remain enforced. The personal token has no automatic expiry; OAuth access tokens still expire after 30 days and require reconnecting.
 
