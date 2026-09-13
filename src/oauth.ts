@@ -9,6 +9,8 @@ const reply = (body: unknown, status=200) => Response.json(body,{status});
 const error = (name: string, description: string, status=400) => reply({error:name,error_description:description},status);
 const random = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 const cookieName = '__Host-hephaestus-connect';
+const loginLifetimeSeconds = 30 * 60;
+const codeLifetimeMs = 5 * 60 * 1000;
 const escape = (text: string) => text.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 
 export function redirectAllowed(uri: string) {
@@ -39,7 +41,7 @@ function loginPage(id:string,clientName:string,redirectUri:string) {
     'Content-Type':'text/html;charset=utf-8',
     'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     'X-Frame-Options':'DENY',
-    'Set-Cookie':`${cookieName}=${id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`,
+    'Set-Cookie':`${cookieName}=${id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${loginLifetimeSeconds}`,
   }});
 }
 
@@ -75,7 +77,7 @@ export async function oauth(request:Request,env:Env):Promise<Response|null> {
     if (!client || !(JSON.parse(client.redirect_uris) as string[]).includes(redirect)) return error('invalid_request','Unregistered client or redirect URI.');
     if (p.get('response_type')!=='code' || p.get('code_challenge_method')!=='S256' || !/^[A-Za-z0-9_-]{43}$/.test(p.get('code_challenge')??'') || p.get('resource')!==RESOURCE || (p.get('scope')??SCOPE)!==SCOPE || (p.get('state')??'').length>2048) return error('invalid_request','S256 PKCE, the Hephaestus resource, and guidance:read scope are required.');
     const id=random();
-    await env.DB.prepare('INSERT INTO oauth_requests(id_hash,client_id,redirect_uri,resource,state,challenge,expires_at) VALUES(?,?,?,?,?,?,?)').bind(await sha256(id),p.get('client_id'),redirect,RESOURCE,p.get('state')??'',p.get('code_challenge'),Date.now()+600000).run();
+    await env.DB.prepare('INSERT INTO oauth_requests(id_hash,client_id,redirect_uri,resource,state,challenge,expires_at) VALUES(?,?,?,?,?,?,?)').bind(await sha256(id),p.get('client_id'),redirect,RESOURCE,p.get('state')??'',p.get('code_challenge'),Date.now()+loginLifetimeSeconds*1000).run();
     return loginPage(id,client.name,redirect);
   }
   if (path==='/oauth/authorize' && request.method==='POST') {
@@ -89,7 +91,8 @@ export async function oauth(request:Request,env:Env):Promise<Response|null> {
     const root=await env.DB.withSession('first-primary').prepare('SELECT id FROM api_tokens WHERE token_hash=? AND revoked_at IS NULL').bind(await sha256(token)).first<{id:string}>();
     if (!root) return error('access_denied','Invalid API token.',401);
     const code=random();
-    const pending=await env.DB.prepare('UPDATE oauth_requests SET code_hash=?,root_token_id=? WHERE id_hash=? AND expires_at>? AND code_hash IS NULL RETURNING redirect_uri,state').bind(await sha256(code),root.id,await sha256(id),Date.now()).first<{redirect_uri:string;state:string}>();
+    const now=Date.now();
+    const pending=await env.DB.prepare('UPDATE oauth_requests SET code_hash=?,root_token_id=?,expires_at=? WHERE id_hash=? AND expires_at>? AND code_hash IS NULL RETURNING redirect_uri,state').bind(await sha256(code),root.id,now+codeLifetimeMs,await sha256(id),now).first<{redirect_uri:string;state:string}>();
     if (!pending) return error('invalid_request','Connection request expired or already approved.');
     const redirect=new URL(pending.redirect_uri);redirect.searchParams.set('code',code);redirect.searchParams.set('state',pending.state);redirect.searchParams.set('iss',ISSUER);
     return new Response(null,{status:303,headers:{Location:redirect.href,'Set-Cookie':`${cookieName}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`}});

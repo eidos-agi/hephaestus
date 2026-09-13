@@ -20,7 +20,7 @@ async function fixture() {
   const release=await buildRelease();
   sqlite.prepare('INSERT INTO guidance_releases(revision,payload) VALUES(?,?)').run(release.revision,JSON.stringify(release));
   const token='hph_'+randomBytes(32).toString('base64url');
-  sqlite.prepare('INSERT INTO api_tokens(id,user_id,token_hash) VALUES(?,?,?)').run('owner','daniel',await sha256(token));
+  sqlite.prepare('INSERT INTO api_tokens(id,user_id,token_hash) VALUES(?,?,?)').run('owner','example-user',await sha256(token));
   const request=(path,options={})=>worker.fetch(new Request(ISSUER+path,options),env);
   const rpc=async(method,params={},auth=token)=>{
     const response=await request('/mcp',{method:'POST',headers:{Authorization:`Bearer ${auth}`,Accept:'application/json, text/event-stream','Content-Type':'application/json','MCP-Protocol-Version':'2025-06-18'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
@@ -121,4 +121,32 @@ test('ChatGPT OAuth discovery, DCR, PKCE, code replay, audience binding, session
   f.sqlite.prepare('UPDATE oauth_sessions SET expires_at=0').run();assert.equal((await f.rpc('tools/list',{},access_token)).status,401);
   f.sqlite.prepare('UPDATE oauth_sessions SET expires_at=?').run(Date.now()+60000);
   f.sqlite.prepare("UPDATE api_tokens SET revoked_at='now' WHERE id='owner'").run();assert.equal((await f.rpc('tools/list',{},access_token)).status,401);
+});
+
+test('Human sign-in has 30 minutes while approved codes expire after five minutes',async(t)=>{
+  const f=await fixture(),started=Date.now();
+  let now=started;
+  t.mock.method(Date,'now',()=>now);
+  const redirect='https://chatgpt.com/connector_platform_oauth_redirect';
+  const {client_id}=await (await f.request('/oauth/register',{method:'POST',body:JSON.stringify({redirect_uris:[redirect]})})).json();
+  const verifier=randomBytes(32).toString('base64url'),challenge=createHash('sha256').update(verifier).digest('base64url');
+  const query=new URLSearchParams({client_id,redirect_uri:redirect,response_type:'code',resource:RESOURCE,code_challenge:challenge,code_challenge_method:'S256'});
+  const begin=async()=>{
+    const page=await f.request('/oauth/authorize?'+query);
+    assert.match(page.headers.get('Set-Cookie'),/Max-Age=1800(?:;|$)/);
+    const cookie=page.headers.get('Set-Cookie').split(';')[0];
+    const request_id=/name="request_id" value="([^"]+)"/.exec(await page.text())[1];
+    return {cookie,form:new URLSearchParams({request_id,api_token:f.token})};
+  };
+  const first=await begin();
+  now=started+15*60*1000;
+  const approval=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:first.cookie},body:first.form});
+  assert.equal(approval.status,303);
+  const code=new URL(approval.headers.get('Location')).searchParams.get('code');
+  now+=5*60*1000;
+  const exchange=new URLSearchParams({grant_type:'authorization_code',client_id,redirect_uri:redirect,resource:RESOURCE,code,code_verifier:verifier});
+  assert.equal((await f.request('/oauth/token',{method:'POST',body:exchange})).status,400);
+  const second=await begin();
+  now+=30*60*1000;
+  assert.equal((await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:second.cookie},body:second.form})).status,400);
 });
