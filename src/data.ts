@@ -1,6 +1,16 @@
 import { validateRelease, type Release } from './schema.ts';
 
-export interface Env { DB: D1Database; AUTH_RATE_LIMIT?: RateLimit }
+export interface Env {
+  DB: D1Database;
+  AUTH_RATE_LIMIT?: RateLimit;
+  REQUEST_RATE_LIMIT?: RateLimit;
+  USER_RATE_LIMIT?: RateLimit;
+  USAGE_GUARD?: DurableObjectNamespace;
+  GLOBAL_DAILY_LIMIT?: string;
+  AUTH_DAILY_LIMIT?: string;
+  USER_DAILY_LIMIT?: string;
+  SERVICE_PAUSED?: string;
+}
 export class NotFound extends Error {}
 
 export async function readRelease(db: D1Database, revision?: string): Promise<Release> {

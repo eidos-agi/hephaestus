@@ -5,9 +5,18 @@
   "account_id": "3c1d42c77978e6af0e458b6f1130c01b",
   "compatibility_date": "2026-09-12",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  "workers_dev": false,
+  "preview_urls": false,
   "minify": true,
-  "ratelimits": [{"name":"AUTH_RATE_LIMIT","namespace_id":"928641","simple":{"limit":60,"period":60}}],
+  "limits": {"cpu_ms":100},
+  "vars": {"GLOBAL_DAILY_LIMIT":"10000","AUTH_DAILY_LIMIT":"500","USER_DAILY_LIMIT":"2000","SERVICE_PAUSED":"false"},
+  "ratelimits": [
+    {"name":"AUTH_RATE_LIMIT","namespace_id":"928641","simple":{"limit":60,"period":60}},
+    {"name":"REQUEST_RATE_LIMIT","namespace_id":"928642","simple":{"limit":120,"period":60}},
+    {"name":"USER_RATE_LIMIT","namespace_id":"928643","simple":{"limit":60,"period":60}}
+  ],
+  "durable_objects": {"bindings":[{"name":"USAGE_GUARD","class_name":"UsageGuard"}]},
+  "migrations": [{"tag":"usage-guard-v1","new_sqlite_classes":["UsageGuard"]}],
   "d1_databases": [{
     "binding": "DB",
     "database_name": "hephaestus-guidance",

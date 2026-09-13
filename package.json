@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy",
     "publish:guidance": "node scripts/admin.mjs publish",
     "db:migrate": "wrangler d1 migrations apply hephaestus-guidance --remote",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build && node scripts/test-runtime.mjs"
   },
   "repository": {
     "type": "git",
@@ -30,6 +30,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260911.1",
     "@modelcontextprotocol/client": "2.0.0",
+    "miniflare": "5.20260911.0-alpha",
     "typescript": "7.0.2",
     "wrangler": "4.131.1"
   },

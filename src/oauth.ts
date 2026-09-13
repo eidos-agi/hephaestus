@@ -11,6 +11,7 @@ const random = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint
 const cookieName = '__Host-hephaestus-connect';
 const loginLifetimeSeconds = 30 * 60;
 const codeLifetimeMs = 5 * 60 * 1000;
+const requestCookieName = (id: string) => `${cookieName}-${id}`;
 const escape = (text: string) => text.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 
 export function redirectAllowed(uri: string) {
@@ -41,8 +42,14 @@ function loginPage(id:string,clientName:string,redirectUri:string) {
     'Content-Type':'text/html;charset=utf-8',
     'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     'X-Frame-Options':'DENY',
-    'Set-Cookie':`${cookieName}=${id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${loginLifetimeSeconds}`,
+    // Each tab owns its cookie; a second connection must not overwrite the first.
+    'Set-Cookie':`${requestCookieName(id)}=${id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${loginLifetimeSeconds}`,
   }});
+}
+
+function connectionError(message:string, status=400) {
+  const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reconnect Hephaestus</title><style>body{font:17px system-ui;background:#11141b;color:#edf0f6;padding:8vh 24px}main{max-width:460px;margin:auto}p{line-height:1.6}a{color:#efad59}</style><main><h1>Let's reconnect Hephaestus</h1><p role="alert">${escape(message)}</p><p>Open Hephaestus in ChatGPT, choose Manage, then Connect to start a fresh connection. Keep that new tab open while entering your personal token.</p><p><a href="https://chatgpt.com/plugins">Open ChatGPT plugins</a></p></main></html>`;
+  return new Response(page,{status,headers:{'Content-Type':'text/html;charset=utf-8','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",'X-Frame-Options':'DENY'}});
 }
 
 export async function oauth(request:Request,env:Env):Promise<Response|null> {
@@ -74,8 +81,8 @@ export async function oauth(request:Request,env:Env):Promise<Response|null> {
     const p=url.searchParams;
     const client=await env.DB.withSession('first-primary').prepare('SELECT name,redirect_uris FROM oauth_clients WHERE id=?').bind(p.get('client_id')??'').first<{name:string;redirect_uris:string}>();
     const redirect=p.get('redirect_uri')??'';
-    if (!client || !(JSON.parse(client.redirect_uris) as string[]).includes(redirect)) return error('invalid_request','Unregistered client or redirect URI.');
-    if (p.get('response_type')!=='code' || p.get('code_challenge_method')!=='S256' || !/^[A-Za-z0-9_-]{43}$/.test(p.get('code_challenge')??'') || p.get('resource')!==RESOURCE || (p.get('scope')??SCOPE)!==SCOPE || (p.get('state')??'').length>2048) return error('invalid_request','S256 PKCE, the Hephaestus resource, and guidance:read scope are required.');
+    if (!client || !(JSON.parse(client.redirect_uris) as string[]).includes(redirect)) return connectionError('This connection link is incomplete or no longer recognized.');
+    if (p.get('response_type')!=='code' || p.get('code_challenge_method')!=='S256' || !/^[A-Za-z0-9_-]{43}$/.test(p.get('code_challenge')??'') || p.get('resource')!==RESOURCE || (p.get('scope')??SCOPE)!==SCOPE || (p.get('state')??'').length>2048) return connectionError('This connection link is missing required security information.');
     const id=random();
     await env.DB.prepare('INSERT INTO oauth_requests(id_hash,client_id,redirect_uri,resource,state,challenge,expires_at) VALUES(?,?,?,?,?,?,?)').bind(await sha256(id),p.get('client_id'),redirect,RESOURCE,p.get('state')??'',p.get('code_challenge'),Date.now()+loginLifetimeSeconds*1000).run();
     return loginPage(id,client.name,redirect);
@@ -84,18 +91,24 @@ export async function oauth(request:Request,env:Env):Promise<Response|null> {
     if (request.headers.get('Origin')!==ISSUER) return error('invalid_request','Invalid form origin.',403);
     const form=new URLSearchParams(await request.text());
     const id=form.get('request_id')??'';
-    const cookie=request.headers.get('Cookie')?.split(';').map(c=>c.trim()).find(c=>c.startsWith(cookieName+'='))?.slice(cookieName.length+1);
-    if (!/^[A-Za-z0-9_-]{43}$/.test(id) || cookie!==id) return error('invalid_request','Connection request expired. Start again.',403);
+    if (!/^[A-Za-z0-9_-]{43}$/.test(id)) return connectionError('This connection page is incomplete. Your API token has not been checked.',403);
+    const cookies=request.headers.get('Cookie')?.split(';').map(c=>c.trim())??[];
+    const name=requestCookieName(id);
+    const readCookie=(key:string)=>cookies.find(c=>c.startsWith(key+'='))?.slice(key.length+1);
+    // Retain pending forms from the preceding deployment until they expire.
+    const cookie=readCookie(name)??readCookie(cookieName);
+    if (!cookie) return connectionError('The browser did not return this connection page’s cookie. The page may have expired, or cookies may have been blocked. Your API token has not been checked.',403);
+    if (cookie!==id) return connectionError('This page does not match its connection cookie. Your API token has not been checked.',403);
     const token=form.get('api_token')??'';
-    if (!/^hph_[A-Za-z0-9_-]{43}$/.test(token)) return error('access_denied','Invalid API token.',401);
+    if (!/^hph_[A-Za-z0-9_-]{43}$/.test(token)) return connectionError('The API token was not recognized. Use the complete personal token from your token file.',401);
     const root=await env.DB.withSession('first-primary').prepare('SELECT id FROM api_tokens WHERE token_hash=? AND revoked_at IS NULL').bind(await sha256(token)).first<{id:string}>();
-    if (!root) return error('access_denied','Invalid API token.',401);
+    if (!root) return connectionError('The API token was not recognized or has been revoked.',401);
     const code=random();
     const now=Date.now();
     const pending=await env.DB.prepare('UPDATE oauth_requests SET code_hash=?,root_token_id=?,expires_at=? WHERE id_hash=? AND expires_at>? AND code_hash IS NULL RETURNING redirect_uri,state').bind(await sha256(code),root.id,now+codeLifetimeMs,await sha256(id),now).first<{redirect_uri:string;state:string}>();
-    if (!pending) return error('invalid_request','Connection request expired or already approved.');
+    if (!pending) return connectionError('This connection page has expired or was already approved.');
     const redirect=new URL(pending.redirect_uri);redirect.searchParams.set('code',code);redirect.searchParams.set('state',pending.state);redirect.searchParams.set('iss',ISSUER);
-    return new Response(null,{status:303,headers:{Location:redirect.href,'Set-Cookie':`${cookieName}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`}});
+    return new Response(null,{status:303,headers:{Location:redirect.href,'Set-Cookie':`${readCookie(name)?name:cookieName}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`}});
   }
   if (path==='/oauth/token' && request.method==='POST') {
     const p=new URLSearchParams(await request.text());

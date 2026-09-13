@@ -1,0 +1,22 @@
+{
+  "name": "Hephaestus perimeter",
+  "description": "Rules scoped only to hephaestus.eidosagi.com",
+  "kind": "zone",
+  "phase": "http_request_firewall_custom",
+  "rules": [
+    {
+      "ref": "hephaestus_supported_routes",
+      "description": "Hephaestus: block unsupported paths and methods before Worker execution",
+      "expression": "(http.host eq \"hephaestus.eidosagi.com\" and not (http.request.method in {\"GET\" \"HEAD\" \"POST\" \"OPTIONS\"} and (http.request.uri.path in {\"/\" \"/health\" \"/mcp\" \"/api/latest\" \"/oauth/authorize\" \"/oauth/register\" \"/oauth/token\" \"/oauth/revoke\"} or starts_with(http.request.uri.path, \"/.well-known/\"))))",
+      "action": "block",
+      "enabled": true
+    },
+    {
+      "ref": "hephaestus_emergency_stop",
+      "description": "Hephaestus emergency stop: enable to block all requests before Worker execution",
+      "expression": "http.host eq \"hephaestus.eidosagi.com\"",
+      "action": "block",
+      "enabled": false
+    }
+  ]
+}

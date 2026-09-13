@@ -7,16 +7,19 @@ import worker from '../src/index.ts';
 import { buildRelease } from '../scripts/build-guidance.mjs';
 import { canonical,sha256,validateRelease } from '../src/schema.ts';
 import { ISSUER,RESOURCE } from '../src/oauth.ts';
+import { usageFixture } from './usage-fixture.mjs';
 
-async function fixture() {
+async function fixture(options={}) {
   const sqlite=new DatabaseSync(':memory:');
   for(const file of ['0001_guidance.sql','0002_api_tokens.sql','0003_oauth.sql']) sqlite.exec(await readFile(new URL('../migrations/'+file,import.meta.url),'utf8'));
-  const sessions=[];
+  const sessions=[],queries=[];
   const DB={
     withSession(constraint){sessions.push(constraint);return this;},
-    prepare(sql){let params=[];return {bind(...p){params=p;return this;},async first(){return sqlite.prepare(sql).get(...params)??null;},async run(){return sqlite.prepare(sql).run(...params);}};},
+    prepare(sql){queries.push(sql);let params=[];return {bind(...p){params=p;return this;},async first(){return sqlite.prepare(sql).get(...params)??null;},async run(){return sqlite.prepare(sql).run(...params);}};},
   };
-  const env={DB};
+  const allow={async limit(){return {success:true};}};
+  const env={DB,AUTH_RATE_LIMIT:allow,REQUEST_RATE_LIMIT:allow,USER_RATE_LIMIT:allow,...options};
+  const usage=usageFixture(env);env.USAGE_GUARD=usage.binding;
   const release=await buildRelease();
   sqlite.prepare('INSERT INTO guidance_releases(revision,payload) VALUES(?,?)').run(release.revision,JSON.stringify(release));
   const token='hph_'+randomBytes(32).toString('base64url');
@@ -29,7 +32,7 @@ async function fixture() {
     return {status:response.status,body};
   };
   const call=async(name,args={})=>(await rpc('tools/call',{name,arguments:args})).body.result;
-  return {sqlite,env,release,token,request,rpc,call,sessions};
+  return {sqlite,env,release,token,request,rpc,call,sessions,queries,usage};
 }
 
 test('MCP initialization, focused reads, unchanged replies, resource discovery and validation',async()=>{
@@ -77,7 +80,7 @@ test('Missing credentials, wrong origin, oversized bodies, and revoked tokens fa
   assert.equal(missing.headers.get('Referrer-Policy'),'no-referrer');
   assert.equal((await f.request('/api/latest',{headers:{Authorization:'Bearer wrong'}})).status,401);
   assert.equal((await f.request('/mcp',{headers:{Origin:'https://evil.example'}})).status,403);
-  assert.equal((await f.request('/mcp',{method:'POST',body:'x'.repeat(33000)})).status,413);
+  assert.equal((await f.request('/mcp',{method:'POST',headers:{Authorization:`Bearer ${f.token}`},body:'x'.repeat(33000)})).status,413);
   f.sqlite.prepare("UPDATE api_tokens SET revoked_at='now' WHERE id='owner'").run();
   assert.equal((await f.rpc('tools/list')).status,401);
 });
@@ -149,4 +152,77 @@ test('Human sign-in has 30 minutes while approved codes expire after five minute
   const second=await begin();
   now+=30*60*1000;
   assert.equal((await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:second.cookie},body:second.form})).status,400);
+});
+
+test('Health, missing credentials, throttles, and the pause switch avoid all database work',async()=>{
+  const f=await fixture();
+  assert.equal((await f.request('/health')).status,200);
+  assert.equal((await f.request('/mcp',{method:'POST'})).status,401);
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:'Bearer invalid'}})).status,401);
+  assert.equal(f.queries.length,0);
+  assert.equal(f.usage.calls,0);
+  f.env.REQUEST_RATE_LIMIT={async limit(){return {success:false};}};
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:`Bearer ${f.token}`}})).status,429);
+  assert.equal(f.queries.length,0);
+  assert.equal(f.usage.calls,0);
+  f.env.SERVICE_PAUSED='true';
+  assert.equal((await f.request('/oauth/register',{method:'POST',body:'{}'})).status,503);
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:`Bearer ${f.token}`}})).status,503);
+  assert.equal((await f.request('/health')).status,200);
+  assert.equal((await f.request('/.well-known/oauth-authorization-server')).status,200);
+  assert.equal(f.queries.length,0);
+});
+
+test('Invalid-token floods stop hitting D1 at the persistent global cutoff',async()=>{
+  const f=await fixture({GLOBAL_DAILY_LIMIT:'1'});
+  const headers={Authorization:'Bearer hph_'+'a'.repeat(43)};
+  assert.equal((await f.request('/api/latest',{headers})).status,401);
+  const queries=f.queries.length;
+  assert.equal(queries,1);
+  const cutoff=await f.request('/api/latest',{headers});
+  assert.equal(cutoff.status,503);
+  assert.ok(Number(cutoff.headers.get('Retry-After'))>0);
+  assert.equal(f.queries.length,queries);
+  f.usage.restart();
+  assert.equal((await f.request('/api/latest',{headers})).status,503);
+  assert.equal(f.queries.length,queries);
+});
+
+test('Multiple personal tokens share one user quota; missing guards fail closed',async()=>{
+  const f=await fixture({USER_DAILY_LIMIT:'1'});
+  const second='hph_'+randomBytes(32).toString('base64url');
+  f.sqlite.prepare('INSERT INTO api_tokens(id,user_id,token_hash) VALUES(?,?,?)').run('second','example-user',await sha256(second));
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:`Bearer ${f.token}`}})).status,200);
+  const queries=f.queries.length;
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:`Bearer ${second}`}})).status,429);
+  assert.equal(f.queries.length,queries+1,'only token verification runs, not the guidance query');
+  delete f.env.USAGE_GUARD;
+  assert.equal((await f.request('/api/latest',{headers:{Authorization:`Bearer ${f.token}`}})).status,503);
+  assert.equal(f.queries.length,queries+1);
+});
+
+test('Parallel connection tabs retain separate CSRF cookies and useful failure messages',async()=>{
+  const f=await fixture(),redirect='https://chatgpt.com/connector_platform_oauth_redirect';
+  const {client_id}=await (await f.request('/oauth/register',{method:'POST',body:JSON.stringify({redirect_uris:[redirect]})})).json();
+  const query=new URLSearchParams({client_id,redirect_uri:redirect,response_type:'code',resource:RESOURCE,code_challenge:'a'.repeat(43),code_challenge_method:'S256'});
+  const begin=async()=>{
+    const page=await f.request('/oauth/authorize?'+query);
+    return {cookie:page.headers.get('Set-Cookie').split(';')[0],id:/name="request_id" value="([^"]+)"/.exec(await page.text())[1]};
+  };
+  const a=await begin(),b=await begin();
+  assert.notEqual(a.cookie.split('=')[0],b.cookie.split('=')[0]);
+  const form=new URLSearchParams({request_id:a.id,api_token:f.token});
+  const missing=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER},body:form});
+  assert.equal(missing.status,403);
+  const html=await missing.text();
+  assert.match(html,/API token has not been checked/);
+  assert.match(html,/href="https:\/\/chatgpt.com\/plugins"/);
+  assert.equal(html.includes(f.token),false);
+  const wrong=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:a.cookie.split('=')[0]+'='+b.id},body:form});
+  assert.equal(wrong.status,403);
+  const approvedA=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:a.cookie+'; '+b.cookie},body:form});
+  assert.equal(approvedA.status,303);
+  assert.ok(approvedA.headers.get('Set-Cookie').startsWith(a.cookie.split('=')[0]+'='));
+  const approvedB=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:b.cookie},body:new URLSearchParams({request_id:b.id,api_token:f.token})});
+  assert.equal(approvedB.status,303);
 });

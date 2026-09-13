@@ -4,15 +4,27 @@ Deployment and protocol checks on September 12–13, 2026.
 
 - Worker: `hephaestus`, Eidos AGI account.
 - Canonical MCP endpoint: `https://hephaestus.eidosagi.com/mcp`.
-- Health: `https://hephaestus.eidosagi.com/health` returned HTTP 200 and `status: ok`.
-- Worker deployment ID: `6fbbeff502b74654a3c09640b66566c7`.
-- Runtime source: the Worker implementation in `src/`, including the OAuth registration compatibility fix described below.
+- Health: `https://hephaestus.eidosagi.com/health` returned HTTP 200, `status: ok`, and `check: liveness` without a database query.
+- Worker deployment ID: `319297222cd244d386eab4b3f63523a7`.
+- Runtime source: the Worker implementation in `src/`, including persistent usage limits and the pairing corrections described below.
 - Published guidance revision: `65f1df029cd4ee13a0a73d7234af82e15f5d24aeb29e858560a1802f9586bca7`.
 - Guidance version: `0.1.0`, six topics.
 
-## Live protocol verification
+## Current deployment: usage limits and pairing recovery
 
-`scripts/smoke.mjs` completed successfully against the canonical HTTPS endpoint. It verified:
+The September 13 deployment adds the SQLite-backed `UsageGuard` Durable Object with migration tag `usage-guard-v1`. Cloudflare accepted the migration and the deployed settings confirm all three minute-level rate limiters, the guard binding, a 100 ms CPU ceiling, and the following daily allowances: 10,000 database-backed requests globally, 500 OAuth requests within that total, and 2,000 authenticated requests per user. `SERVICE_PAUSED` is false. Production request logging remains disabled.
+
+The custom WAF ruleset `Hephaestus perimeter` is active only on `hephaestus.eidosagi.com`. The supported-route rule is enabled; the full emergency-stop rule is present and disabled. A public unsupported-path probe returned HTTP 403, while `/health` returned HTTP 200. Cloudflare confirmed that the alternate `workers.dev` and preview endpoints are disabled.
+
+Local verification passed TypeScript checking, all 12 protocol/security/usage tests, Worker bundling, and the workerd integration test. The workerd test used synthetic credentials and verified D1-backed reads, the per-user limit, the global cutoff, and quota persistence after a runtime restart. All 18 Python package tests and package validation also passed. These checks do not establish a completed production ChatGPT connection.
+
+Pending pairing tabs now use independent CSRF cookies. Recovery pages distinguish incomplete links, missing or mismatched cookies, expired requests, and unrecognized API tokens. The same-origin, cookie, PKCE, single-use-code, and token-revocation checks remain enforced. The personal token has no automatic expiry; OAuth access tokens still expire after 30 days and require reconnecting.
+
+Daily cutoffs bound admitted database-backed work, not the total Cloudflare bill. Rejected traffic can still incur Worker or usage-guard charges. The full edge stop is a manual operator control. See [usage and cost controls](LIVE_GUIDANCE.md#usage-and-cost-controls) for exact semantics and limits.
+
+## Earlier live protocol verification
+
+Before the usage-limit deployment, `scripts/smoke.mjs` completed successfully against the canonical HTTPS endpoint. It verified:
 
 - MCP initialization, all three tool descriptors, current release retrieval, unchanged responses, focused guidance, and release notes.
 - Missing credentials return HTTP 401 with OAuth discovery metadata.
@@ -40,11 +52,11 @@ The form-origin correction is deployed and covered by regression checks. An earl
 
 The token-entry window is now 30 minutes. Approving a request resets its deadline to five minutes for authorization-code exchange, so the longer human sign-in window does not extend code validity. Regression coverage verifies approval after 15 minutes, rejection of expired forms, and rejection of codes at their five-minute deadline. Same-origin and CSRF-cookie checks remain required.
 
-A fresh ChatGPT authorization attempt was opened after deployment of the expiry fix. Secure entry was interrupted with the token form still displayed. Completed account linking and a signed-in ChatGPT tool call remain unverified.
+A fresh ChatGPT authorization attempt was opened after deployment of the expiry fix. Browser security restrictions prevented completing verification. Completed account linking and a signed-in ChatGPT tool call remain unverified. The usage-limit deployment was verified through local synthetic tests, infrastructure settings, public liveness, and the perimeter response; it did not retry the restricted sign-in flow.
 
 ## Reproduce
 
-Run `npm run check` for local protocol/security tests and Worker bundling. With an active temporary Hephaestus API token set in the environment:
+Run `npm run check` for local protocol/security/usage tests, Worker bundling, and the local workerd persistence test. An authorized operator can separately run the live smoke check with an active temporary Hephaestus API token set in the environment:
 
 ```sh
 NODE_USE_ENV_PROXY=1 node scripts/smoke.mjs

@@ -1,9 +1,11 @@
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { authenticate } from './auth.ts';
+import { authenticate, bearerToken } from './auth.ts';
 import { guidance, manifest, NotFound, readRelease, updates, type Env } from './data.ts';
-import { revisionSchema, topicIdSchema } from './schema.ts';
+import { revisionSchema, topicIdSchema, sha256 } from './schema.ts';
 import { oauth, ISSUER, SCOPE } from './oauth.ts';
+import { admit } from './usage.ts';
+export { UsageGuard } from './usage.ts';
 
 const instructions = 'Hephaestus supplies current execution guidance. Call hephaestus_latest once at task start or a major phase boundary, then fetch only relevant topics with hephaestus_guidance. Reuse unchanged topic hashes and pin the returned release revision. Guidance does not override host instructions, user scope, or permissions. It cannot grant agent or model controls. Updates are fresh on call, not unsolicited push notifications.';
 const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -66,18 +68,36 @@ export default {
       repository: 'https://github.com/eidos-agi/hephaestus', guidance: 'Versioned execution guidance, fresh on each call.',
     }));
     if (url.pathname === '/health' && request.method === 'GET') {
-      try { await readRelease(env.DB); return reply(json({ status:'ok', service:'hephaestus' })); }
-      catch { return reply(json({ status:'unavailable', service:'hephaestus' },503)); }
+      return reply(json({ status:'ok', service:'hephaestus', check:'liveness' }));
     }
     if (request.method === 'OPTIONS') return reply(new Response(null, { status:204, headers: {
       'Access-Control-Allow-Methods':'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers':'Authorization, Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id',
     }}));
     try {
-      if (url.pathname.startsWith('/oauth/') && env.AUTH_RATE_LIMIT) {
+      const protectedPath = ['/mcp','/api/latest'].includes(url.pathname);
+      const authPath = url.pathname.startsWith('/oauth/');
+      const challenge = () => reply(json({error:'Authentication required'},401,{'WWW-Authenticate':`Bearer resource_metadata="${ISSUER}/.well-known/oauth-protected-resource", scope="${SCOPE}"`}));
+      if (env.SERVICE_PAUSED === 'true' && (protectedPath || authPath)) return reply(json({error:'service_paused'},503,{'Retry-After':'300'}));
+      if (protectedPath || authPath) {
+        if (!env.REQUEST_RATE_LIMIT) throw new Error('Request limiter unavailable');
+        const allowed = await env.REQUEST_RATE_LIMIT.limit({key:request.headers.get('CF-Connecting-IP')??'unknown'});
+        if (!allowed.success) return reply(json({error:'rate_limited'},429,{'Retry-After':'60'}));
+      }
+      if (authPath) {
+        if (!env.AUTH_RATE_LIMIT) throw new Error('Auth limiter unavailable');
         const allowed=await env.AUTH_RATE_LIMIT.limit({key:request.headers.get('CF-Connecting-IP')??'unknown'});
         if (!allowed.success) return reply(json({error:'rate_limited'},429,{'Retry-After':'60'}));
       }
+      if (protectedPath && !bearerToken(request)) return challenge();
+      // Only supported, database-backed routes consume the persistent budget.
+      const dynamic = (protectedPath && (request.method === 'POST' || request.method === 'GET')) ||
+        (['/oauth/register','/oauth/token','/oauth/revoke'].includes(url.pathname) && request.method === 'POST') ||
+        (url.pathname === '/oauth/authorize' && ['GET','POST'].includes(request.method));
+      if (dynamic) {
+        const denied = await admit(env, {kind:authPath ? 'auth' : 'global'});
+        if (denied) return reply(denied);
+      } else if (protectedPath) return reply(json({error:'Method not allowed'},405));
       if (request.method === 'POST') {
         // Bound actual streamed bytes, including requests with no Content-Length.
         if (Number(request.headers.get('Content-Length') ?? 0) > 32768) return reply(json({error:'Request too large'},413));
@@ -99,7 +119,13 @@ export default {
       const authResponse=await oauth(request,env);
       if (authResponse) return reply(authResponse);
       if (!['/mcp','/api/latest'].includes(url.pathname)) return reply(json({error:'Not found'},404));
-      if (!await authenticate(request,env.DB)) return reply(json({error:'Authentication required'},401,{'WWW-Authenticate':`Bearer resource_metadata="${ISSUER}/.well-known/oauth-protected-resource", scope="${SCOPE}"`}));
+      const identity = await authenticate(request,env.DB);
+      if (!identity) return challenge();
+      if (!env.USER_RATE_LIMIT) throw new Error('User limiter unavailable');
+      const user = await sha256(identity.user_id);
+      if (!(await env.USER_RATE_LIMIT.limit({key:user})).success) return reply(json({error:'rate_limited'},429,{'Retry-After':'60'}));
+      const denied = await admit(env, {kind:'user',user});
+      if (denied) return reply(denied);
       if (url.pathname === '/api/latest') {
         if (request.method !== 'GET') return reply(json({error:'Method not allowed'},405,{Allow:'GET'}));
         return reply(json(manifest(await readRelease(env.DB))));
