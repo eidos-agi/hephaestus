@@ -74,6 +74,7 @@ test('Missing credentials, wrong origin, oversized bodies, and revoked tokens fa
   const f=await fixture();
   const missing=await f.request('/mcp',{method:'POST'});assert.equal(missing.status,401);
   assert.ok(missing.headers.get('WWW-Authenticate').includes('resource_metadata='));
+  assert.equal(missing.headers.get('Referrer-Policy'),'no-referrer');
   assert.equal((await f.request('/api/latest',{headers:{Authorization:'Bearer wrong'}})).status,401);
   assert.equal((await f.request('/mcp',{headers:{Origin:'https://evil.example'}})).status,403);
   assert.equal((await f.request('/mcp',{method:'POST',body:'x'.repeat(33000)})).status,413);
@@ -98,9 +99,13 @@ test('ChatGPT OAuth discovery, DCR, PKCE, code replay, audience binding, session
   const verifier=randomBytes(32).toString('base64url'),challenge=createHash('sha256').update(verifier).digest('base64url');
   const q=new URLSearchParams({client_id,redirect_uri:redirect,response_type:'code',resource:RESOURCE,scope:'guidance:read',state:'keep-me',code_challenge:challenge,code_challenge_method:'S256'});
   const page=await f.request('/oauth/authorize?'+q);assert.equal(page.status,200);
+  assert.equal(page.headers.get('Referrer-Policy'),'strict-origin');
   const cookie=page.headers.get('Set-Cookie').split(';')[0];
   const id=/name="request_id" value="([^"]+)"/.exec(await page.text())[1];
   const form=new URLSearchParams({request_id:id,api_token:f.token});
+  for(const origin of ['null','https://evil.example']) {
+    assert.equal((await f.request('/oauth/authorize',{method:'POST',headers:{Origin:origin,Cookie:cookie},body:form})).status,403);
+  }
   assert.equal((await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER},body:form})).status,403);
   const approval=await f.request('/oauth/authorize',{method:'POST',headers:{Origin:ISSUER,Cookie:cookie},body:form});assert.equal(approval.status,303);
   const callback=new URL(approval.headers.get('Location'));assert.equal(callback.searchParams.get('state'),'keep-me');assert.equal(callback.searchParams.get('iss'),ISSUER);

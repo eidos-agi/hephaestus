@@ -43,7 +43,9 @@ function secure(response: Response, origin: string | null) {
   const headers = new Headers(response.headers);
   headers.set('Cache-Control', 'no-store');
   headers.set('X-Content-Type-Options', 'nosniff');
-  headers.set('Referrer-Policy', 'no-referrer');
+  // HTML form POSTs send Origin: null under no-referrer. Preserve their
+  // origin for CSRF validation while never forwarding URL paths or queries.
+  headers.set('Referrer-Policy', headers.get('Content-Type')?.startsWith('text/html') ? 'strict-origin' : 'no-referrer');
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Vary', 'Origin');

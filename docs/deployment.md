@@ -1,11 +1,11 @@
 # Deployment verification
 
-Verified on September 12, 2026.
+Deployment and protocol checks on September 12–13, 2026.
 
 - Worker: `hephaestus`, Eidos AGI account.
 - Canonical MCP endpoint: `https://hephaestus.eidosagi.com/mcp`.
 - Health: `https://hephaestus.eidosagi.com/health` returned HTTP 200 and `status: ok`.
-- Worker deployment ID: `6bc856c1a6f14806bbab4e20edd01e72`.
+- Worker deployment ID: `2f2b3b3e034c47e0a3650ba52dd492dd`.
 - Runtime source: the Worker implementation in `src/`, including the OAuth registration compatibility fix described below.
 - Published guidance revision: `65f1df029cd4ee13a0a73d7234af82e15f5d24aeb29e858560a1802f9586bca7`.
 - Guidance version: `0.1.0`, six topics.
@@ -33,6 +33,10 @@ Actual connector creation initially failed because ChatGPT requested an addition
 After deployment, ChatGPT successfully created the connector and navigated to the Hephaestus personal-token sign-in form. Credential entry and a signed-in ChatGPT tool call remain pending. Successful connector creation does not prove account linking or tool invocation.
 
 Regression coverage verifies the negotiated grant list, rejects registrations with no authorization-code grant, and confirms that the token endpoint still rejects refresh grants. Diagnostic logging records only rejected field names and validation codes. Temporary production diagnostics were disabled after identifying the mismatch.
+
+The browser subsequently exposed a form-origin bug: `no-referrer` causes a navigation POST to send `Origin: null`, which the server correctly rejects. HTML now uses `strict-origin`, preserving the same-site form origin without disclosing URL paths or query strings. API responses retain `no-referrer`; null and foreign form origins remain rejected. This behavior follows the [Fetch Standard's Origin-header algorithm](https://fetch.spec.whatwg.org/#append-a-request-origin-header).
+
+The form-origin correction is deployed and covered by regression checks. Account linking and an actual ChatGPT tool call remain unfinished: browser security policy blocked observation after the secure token submission, and a completed OAuth exchange has not been verified.
 
 ## Reproduce
 
